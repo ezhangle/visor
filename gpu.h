@@ -20,6 +20,7 @@ struct GPUState
   VkDescriptorSet set;
 };
 
+#ifndef __CUDACC__
 struct int4
 {
   int4() {}
@@ -47,6 +48,7 @@ struct float4
     float v[4];
   };
 };
+#endif
 
 struct VertexCacheEntry
 {

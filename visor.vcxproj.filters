@@ -65,4 +65,7 @@
       <UniqueIdentifier>{8d761509-3638-475e-9f65-f6e3cec1b493}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
+  <ItemGroup>
+    <CudaCompile Include="rasterizer.cu" />
+  </ItemGroup>
 </Project>

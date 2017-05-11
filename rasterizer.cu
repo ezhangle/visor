@@ -1,5 +1,6 @@
 #include "precompiled.h"
 #include "gpu.h"
+#include <cuda_runtime.h>
 
 uint32_t GetIndex(const GPUState &state, uint32_t vertexIndex, bool indexed)
 {
@@ -147,7 +148,7 @@ static void ToWindow(uint32_t w, uint32_t h, const std::vector<VertexCacheEntry>
 
   for(const VertexCacheEntry &v : pos)
   {
-    int4 win(0, 0, 0, 0);
+    int4 win = make_int4(0, 0, 0, 0);
 
     win.x = int((v.position.x / v.position.w + 1.0f) * 0.5f * w);
     win.y = int((v.position.y * -1.0f / v.position.w + 1.0f) * 0.5f * h);
@@ -165,10 +166,16 @@ static void MinMax(const int4 *coords, int4 &minwin, int4 &maxwin)
 
   for(int i = 0; i < 3; i++)
   {
-    for(int c = 0; c < 4; c++)
+    //for(int c = 0; c < 4; c++)
     {
-      minwin.v[c] = std::min(minwin.v[c], coords[i].v[c]);
-      maxwin.v[c] = std::max(maxwin.v[c], coords[i].v[c]);
+      minwin.x = std::min(minwin.x, coords[i].x);
+      maxwin.x = std::max(maxwin.x, coords[i].x);
+      minwin.y = std::min(minwin.y, coords[i].y);
+      maxwin.y = std::max(maxwin.y, coords[i].y);
+      minwin.z = std::min(minwin.z, coords[i].z);
+      maxwin.z = std::max(maxwin.z, coords[i].z);
+      minwin.w = std::min(minwin.w, coords[i].w);
+      maxwin.w = std::max(maxwin.w, coords[i].w);
     }
   }
 }
@@ -209,7 +216,7 @@ static inline int4 barycentric(const int ABx, const int ABy, const int ACx, cons
   const int ux = (ACx * PAy) - (ACy * PAx);
   const int uy = (PAx * ABy) - (PAy * ABx);
 
-  return int4(area2 - (ux + uy), ux, uy, 0);
+  return make_int4(area2 - (ux + uy), ux, uy, 0);
 }
 
 void ClearTarget(VkImage target, const VkClearDepthStencilValue &col)
@@ -338,9 +345,9 @@ void DrawTriangles(const GPUState &state, int numVerts, uint32_t first, bool ind
     int4 minwin, maxwin;
     MinMax(tri, minwin, maxwin);
 
-    float4 invw(1.0f / vsout[0].position.w, 1.0f / vsout[1].position.w, 1.0f / vsout[2].position.w,
+    float4 invw = make_float4(1.0f / vsout[0].position.w, 1.0f / vsout[1].position.w, 1.0f / vsout[2].position.w,
                 0.0f);
-    float4 depth(vsout[0].position.z * invw.x, vsout[1].position.z * invw.y,
+    float4 depth = make_float4(vsout[0].position.z * invw.x, vsout[1].position.z * invw.y,
                  vsout[2].position.z * invw.z, 0.0f);
 
     // clamp to screen, assume guard band is enough!
@@ -358,7 +365,7 @@ void DrawTriangles(const GPUState &state, int numVerts, uint32_t first, bool ind
     {
       for(int x = minwin.x; x < maxwin.x; x++)
       {
-        int4 b = barycentric(ABx, ABy, ACx, ACy, area2, tri, int4(x, y, 0, 0));
+        int4 b = barycentric(ABx, ABy, ACx, ACy, area2, tri, make_int4(x, y, 0, 0));
 
         b.x *= barymul;
         b.y *= barymul;
@@ -367,7 +374,7 @@ void DrawTriangles(const GPUState &state, int numVerts, uint32_t first, bool ind
         if(b.x >= 0 && b.y >= 0 && b.z >= 0)
         {
           // normalise the barycentrics
-          float4 n = float4(float(b.x), float(b.y), float(b.z), 0.0f);
+          float4 n = make_float4(float(b.x), float(b.y), float(b.z), 0.0f);
           n.x *= invarea;
           n.y *= invarea;
           n.z *= invarea;
@@ -406,11 +413,11 @@ void DrawTriangles(const GPUState &state, int numVerts, uint32_t first, bool ind
             n.z *= invlen;
 
             float4 pix;
-            state.pipeline->fs(state, pixdepth, n, vsout, pix);
+            state.pipeline->fs(state, (const float)pixdepth, n, vsout, pix);
 
             if(state.pipeline->blend.blendEnable)
             {
-              float4 existing = float4(bits[(y * w + x) * bpp + 2], bits[(y * w + x) * bpp + 1],
+              float4 existing = make_float4(bits[(y * w + x) * bpp + 2], bits[(y * w + x) * bpp + 1],
                                        bits[(y * w + x) * bpp + 0], 1.0f);
               existing.x /= 255.0f;
               existing.y /= 255.0f;
