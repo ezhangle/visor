@@ -119,6 +119,10 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <AdditionalDependencies>cudart.lib;ws2_32.lib;kernel32.lib;user32.lib;gdi32.lib;winspool.lib;comdlg32.lib;advapi32.lib;shell32.lib;ole32.lib;oleaut32.lib;uuid.lib;odbc32.lib;odbccp32.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
+    <CudaCompile>
+      <CodeGeneration>
+      </CodeGeneration>
+    </CudaCompile>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
     <ClCompile>
@@ -170,7 +174,6 @@
     <ClCompile Include="cmd_record.cpp" />
     <ClCompile Include="descriptors.cpp" />
     <ClCompile Include="images.cpp" />
-    <ClCompile Include="premade_shaders.cpp" />
     <ClCompile Include="query.cpp" />
     <ClCompile Include="icd_stubs.cpp" />
     <ClCompile Include="cmd_exec.cpp" />
@@ -181,10 +184,6 @@
     <ClCompile Include="wsi.cpp" />
     <ClCompile Include="memory.cpp" />
     <ClCompile Include="precompiled.cpp" />
-    <ClCompile Include="rasterizer.cpp">
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">true</ExcludedFromBuild>
-      <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Release|x64'">true</ExcludedFromBuild>
-    </ClCompile>
     <ClCompile Include="icd_interface.cpp" />
   </ItemGroup>
   <ItemGroup>
@@ -203,6 +202,7 @@
     <None Include="visor.json" />
   </ItemGroup>
   <ItemGroup>
+    <CudaCompile Include="premade_shaders.cu" />
     <CudaCompile Include="rasterizer.cu" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

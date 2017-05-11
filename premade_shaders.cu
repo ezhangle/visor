@@ -2,6 +2,7 @@
 #include <map>
 #include <utility>
 #include "gpu.h"
+#include <cuda_runtime.h>
 
 void transpose(const float *in, float *out)
 {
@@ -106,7 +107,7 @@ static float powint(const float x)
   return res;
 }
 
-float rsqrt(float number)
+float _rsqrt(float number)
 {
   float ret;
   _mm_store_ss(&ret, _mm_rsqrt_ss(_mm_load_ss(&number)));
@@ -115,7 +116,7 @@ float rsqrt(float number)
 
 static void normalize3(float *a)
 {
-  float invlen = rsqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+  float invlen = _rsqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
   a[0] *= invlen;
   a[1] *= invlen;
   a[2] *= invlen;
@@ -123,7 +124,7 @@ static void normalize3(float *a)
 
 static void normalize3(float4 &a)
 {
-  return normalize3(a.v);
+  return normalize3(&a.x);
 }
 
 MICROPROFILE_DEFINE(vkcube_vs, "premade_shaders", "vkcube_vs", MP_BLACK);
@@ -150,17 +151,17 @@ void vkcube_vs(const GPUState &state, uint32_t vertexIndex, VertexCacheEntry &ou
   for(int row = 0; row < 4; row++)
   {
     for(int col = 0; col < 4; col++)
-      out.position.v[row] += MVP[col * 4 + row] * pos[col];
+      (&out.position.x)[row] += MVP[col * 4 + row] * pos[col];
   }
 
-  memcpy(out.interps[0].v, UV, sizeof(float4));
+  memcpy(&out.interps[0].x, UV, sizeof(float4));
 }
 
 void vkcube_fs(const GPUState &state, float pixdepth, const float4 &bary,
                const VertexCacheEntry tri[3], float4 &out)
 {
-  float u = dot(bary, float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
-  float v = dot(bary, float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
+  float u = dot(bary, make_float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
+  float v = dot(bary, make_float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
 
   VkImage tex = state.set->binds[1].data.imageInfo.imageView->image;
 
@@ -193,8 +194,8 @@ void sascha_textoverlay_vs(const GPUState &state, uint32_t vertexIndex, VertexCa
 void sascha_textoverlay_fs(const GPUState &state, float pixdepth, const float4 &bary,
                            const VertexCacheEntry tri[3], float4 &out)
 {
-  float u = dot(bary, float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
-  float v = dot(bary, float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
+  float u = dot(bary, make_float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
+  float v = dot(bary, make_float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
 
   VkImage tex = state.set->binds[0].data.imageInfo.imageView->image;
 
@@ -231,11 +232,11 @@ void sascha_texture_vs(const GPUState &state, uint32_t vertexIndex, VertexCacheE
   out.interps[1].x = lodBias[0];
 
   // vec3 worldPos = vec3(ubo.model * vec4(inPos, 1.0));
-  float4 worldPos = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 worldPos = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   for(int row = 0; row < 4; row++)
   {
     for(int col = 0; col < 4; col++)
-      worldPos.v[row] += model[col * 4 + row] * (col < 3 ? inPos[col] : 1.0f);
+        (&worldPos.x)[row] += model[col * 4 + row] * (col < 3 ? inPos[col] : 1.0f);
   }
 
   // gl_Position = ubo.projection * ubo.model * vec4(inPos.xyz, 1.0);
@@ -244,7 +245,7 @@ void sascha_texture_vs(const GPUState &state, uint32_t vertexIndex, VertexCacheE
   for(int row = 0; row < 4; row++)
   {
     for(int col = 0; col < 4; col++)
-      out.position.v[row] += projection[col * 4 + row] * worldPos.v[col];
+      (&out.position.x)[row] += projection[col * 4 + row] * (&worldPos.x)[col];
   }
 
   // vec4 pos = ubo.model * vec4(inPos, 1.0);
@@ -255,22 +256,22 @@ void sascha_texture_vs(const GPUState &state, uint32_t vertexIndex, VertexCacheE
   transpose(model, transpMat);
   float invMat[16];
   inverse(transpMat, invMat);
-  out.interps[2] = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  out.interps[2] = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   for(int row = 0; row < 3; row++)
   {
     for(int col = 0; col < 3; col++)
-      out.interps[2].v[row] += invMat[col * 4 + row] * inNormal[col];
+      (&out.interps[2].x)[row] += invMat[col * 4 + row] * inNormal[col];
   }
 
   // vec3 lightPos = vec3(0.0);
-  float4 lightPos = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 lightPos = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
   // vec3 lPos = mat3(ubo.model) * lightPos.xyz;
-  float4 lPos = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 lPos = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   for(int row = 0; row < 3; row++)
   {
     for(int col = 0; col < 3; col++)
-      lPos.v[row] += model[col * 4 + row] * lightPos.v[col];
+      (&lPos.x)[row] += model[col * 4 + row] * (&lightPos.x)[col];
   }
 
   // outLightVec = lPos - pos.xyz;
@@ -289,33 +290,33 @@ void sascha_texture_fs(const GPUState &state, float pixdepth, const float4 &bary
 {
   VkImage tex = state.set->binds[1].data.imageInfo.imageView->image;
 
-  float u = dot(bary, float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
-  float v = dot(bary, float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
+  float u = dot(bary, make_float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
+  float v = dot(bary, make_float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
 
   // vec4 color = texture(samplerColor, inUV, inLodBias);
   float4 color = sample_tex_wrapped(u, v, tex);
 
   // vec3 N = normalize(inNormal);
   float4 N;
-  N.x = dot(bary, float4(tri[0].interps[2].x, tri[1].interps[2].x, tri[2].interps[2].x, 0.0f));
-  N.y = dot(bary, float4(tri[0].interps[2].y, tri[1].interps[2].y, tri[2].interps[2].y, 0.0f));
-  N.z = dot(bary, float4(tri[0].interps[2].z, tri[1].interps[2].z, tri[2].interps[2].z, 0.0f));
+  N.x = dot(bary, make_float4(tri[0].interps[2].x, tri[1].interps[2].x, tri[2].interps[2].x, 0.0f));
+  N.y = dot(bary, make_float4(tri[0].interps[2].y, tri[1].interps[2].y, tri[2].interps[2].y, 0.0f));
+  N.z = dot(bary, make_float4(tri[0].interps[2].z, tri[1].interps[2].z, tri[2].interps[2].z, 0.0f));
   N.w = 0.0f;
   normalize3(N);
 
   // vec3 L = normalize(inLightVec);
   float4 L;
-  L.x = dot(bary, float4(tri[0].interps[4].x, tri[1].interps[4].x, tri[2].interps[4].x, 0.0f));
-  L.y = dot(bary, float4(tri[0].interps[4].y, tri[1].interps[4].y, tri[2].interps[4].y, 0.0f));
-  L.z = dot(bary, float4(tri[0].interps[4].z, tri[1].interps[4].z, tri[2].interps[4].z, 0.0f));
+  L.x = dot(bary, make_float4(tri[0].interps[4].x, tri[1].interps[4].x, tri[2].interps[4].x, 0.0f));
+  L.y = dot(bary, make_float4(tri[0].interps[4].y, tri[1].interps[4].y, tri[2].interps[4].y, 0.0f));
+  L.z = dot(bary, make_float4(tri[0].interps[4].z, tri[1].interps[4].z, tri[2].interps[4].z, 0.0f));
   L.w = 0.0f;
   normalize3(L);
 
   // vec3 V = normalize(inViewVec);
   float4 V;
-  V.x = dot(bary, float4(tri[0].interps[3].x, tri[1].interps[3].x, tri[2].interps[3].x, 0.0f));
-  V.y = dot(bary, float4(tri[0].interps[3].y, tri[1].interps[3].y, tri[2].interps[3].y, 0.0f));
-  V.z = dot(bary, float4(tri[0].interps[3].z, tri[1].interps[3].z, tri[2].interps[3].z, 0.0f));
+  V.x = dot(bary, make_float4(tri[0].interps[3].x, tri[1].interps[3].x, tri[2].interps[3].x, 0.0f));
+  V.y = dot(bary, make_float4(tri[0].interps[3].y, tri[1].interps[3].y, tri[2].interps[3].y, 0.0f));
+  V.z = dot(bary, make_float4(tri[0].interps[3].z, tri[1].interps[3].z, tri[2].interps[3].z, 0.0f));
   V.w = 0.0f;
   normalize3(V);
 
@@ -323,7 +324,7 @@ void sascha_texture_fs(const GPUState &state, float pixdepth, const float4 &bary
   //   with reflect(I, N) = I - 2.0 * dot(N, I) * N;
   // vec3 R = (-L) - 2.0 * dot(N, -L) * N;
   float4 R;
-  float mulResult = 2.0f * dot(N, float4(-L.x, -L.y, -L.z, -L.w));
+  float mulResult = 2.0f * dot(N, make_float4(-L.x, -L.y, -L.z, -L.w));
   R.x = (-L.x) - mulResult * N.x;
   R.y = (-L.y) - mulResult * N.y;
   R.z = (-L.z) - mulResult * N.z;
@@ -362,11 +363,11 @@ void sascha_vulkanscene_mesh_vs(const GPUState &state, uint32_t vertexIndex, Ver
   const float *view = normal + 16;
   const float *lightpos = view + 16;
 
-  float *outUV = out.interps[0].v;
-  float *outNormal = out.interps[1].v;
-  float *outColor = out.interps[2].v;
-  float *outEyePos = out.interps[3].v;
-  float *outLightVec = out.interps[4].v;
+  float *outUV = &out.interps[0].x;
+  float *outNormal = &out.interps[1].x;
+  float *outColor = &out.interps[2].x;
+  float *outEyePos = &out.interps[3].x;
+  float *outLightVec = &out.interps[4].x;
 
   // outUV = inTexCoord.st;
   memcpy(outUV, inTexCoord, 2 * sizeof(float));
@@ -390,19 +391,19 @@ void sascha_vulkanscene_mesh_vs(const GPUState &state, uint32_t vertexIndex, Ver
   mul4(view, model, modelView);
 
   // vec4 pos = modelView * inPos;
-  float4 pos = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 pos = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   for(int row = 0; row < 4; row++)
   {
     for(int col = 0; col < 4; col++)
-      pos.v[row] += modelView[col * 4 + row] * (col < 3 ? inPos[col] : 1.0f);
+      (&pos.x)[row] += modelView[col * 4 + row] * (col < 3 ? inPos[col] : 1.0f);
   }
 
   // gl_Position = ubo.projection * pos;
-  out.position = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  out.position = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   for(int row = 0; row < 4; row++)
   {
     for(int col = 0; col < 4; col++)
-      out.position.v[row] += projection[col * 4 + row] * pos.v[col];
+      (&out.position.x)[row] += projection[col * 4 + row] * (&pos.x)[col];
   }
 
   // outEyePos = vec3(modelView * pos);
@@ -411,15 +412,15 @@ void sascha_vulkanscene_mesh_vs(const GPUState &state, uint32_t vertexIndex, Ver
     outEyePos[row] = 0.0f;
 
     for(int col = 0; col < 4; col++)
-      outEyePos[row] += modelView[col * 4 + row] * pos.v[col];
+      outEyePos[row] += modelView[col * 4 + row] * (&pos.x)[col];
   }
 
   // vec4 lightPos = vec4(ubo.lightpos, 1.0) * modelView;
-  float4 lightPos = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 lightPos = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   for(int row = 0; row < 3; row++)
   {
     for(int col = 0; col < 4; col++)
-      lightPos.v[row] += modelView[row * 4 + col] * (col < 3 ? lightpos[col] : 1.0f);
+      (&lightPos.x)[row] += modelView[row * 4 + col] * (col < 3 ? lightpos[col] : 1.0f);
   }
 
   // outLightVec = normalize(lightPos.xyz - outEyePos);
@@ -442,34 +443,34 @@ void sascha_vulkanscene_mesh_fs(const GPUState &state, float pixdepth, const flo
                                 const VertexCacheEntry tri[3], float4 &out)
 {
   float4 inNormal;
-  inNormal.x = dot(bary, float4(tri[0].interps[1].x, tri[1].interps[1].x, tri[2].interps[1].x, 0.0f));
-  inNormal.y = dot(bary, float4(tri[0].interps[1].y, tri[1].interps[1].y, tri[2].interps[1].y, 0.0f));
-  inNormal.z = dot(bary, float4(tri[0].interps[1].z, tri[1].interps[1].z, tri[2].interps[1].z, 0.0f));
+  inNormal.x = dot(bary, make_float4(tri[0].interps[1].x, tri[1].interps[1].x, tri[2].interps[1].x, 0.0f));
+  inNormal.y = dot(bary, make_float4(tri[0].interps[1].y, tri[1].interps[1].y, tri[2].interps[1].y, 0.0f));
+  inNormal.z = dot(bary, make_float4(tri[0].interps[1].z, tri[1].interps[1].z, tri[2].interps[1].z, 0.0f));
   inNormal.w = 0.0f;
 
   float4 inColor;
-  inColor.x = dot(bary, float4(tri[0].interps[2].x, tri[1].interps[2].x, tri[2].interps[2].x, 0.0f));
-  inColor.y = dot(bary, float4(tri[0].interps[2].y, tri[1].interps[2].y, tri[2].interps[2].y, 0.0f));
-  inColor.z = dot(bary, float4(tri[0].interps[2].z, tri[1].interps[2].z, tri[2].interps[2].z, 0.0f));
+  inColor.x = dot(bary, make_float4(tri[0].interps[2].x, tri[1].interps[2].x, tri[2].interps[2].x, 0.0f));
+  inColor.y = dot(bary, make_float4(tri[0].interps[2].y, tri[1].interps[2].y, tri[2].interps[2].y, 0.0f));
+  inColor.z = dot(bary, make_float4(tri[0].interps[2].z, tri[1].interps[2].z, tri[2].interps[2].z, 0.0f));
   inColor.w = 0.0f;
 
   float4 inEyePos;
-  inEyePos.x = dot(bary, float4(tri[0].interps[3].x, tri[1].interps[3].x, tri[2].interps[3].x, 0.0f));
-  inEyePos.y = dot(bary, float4(tri[0].interps[3].y, tri[1].interps[3].y, tri[2].interps[3].y, 0.0f));
-  inEyePos.z = dot(bary, float4(tri[0].interps[3].z, tri[1].interps[3].z, tri[2].interps[3].z, 0.0f));
+  inEyePos.x = dot(bary, make_float4(tri[0].interps[3].x, tri[1].interps[3].x, tri[2].interps[3].x, 0.0f));
+  inEyePos.y = dot(bary, make_float4(tri[0].interps[3].y, tri[1].interps[3].y, tri[2].interps[3].y, 0.0f));
+  inEyePos.z = dot(bary, make_float4(tri[0].interps[3].z, tri[1].interps[3].z, tri[2].interps[3].z, 0.0f));
   inEyePos.w = 0.0f;
 
   float4 inLightVec;
   inLightVec.x =
-      dot(bary, float4(tri[0].interps[4].x, tri[1].interps[4].x, tri[2].interps[4].x, 0.0f));
+      dot(bary, make_float4(tri[0].interps[4].x, tri[1].interps[4].x, tri[2].interps[4].x, 0.0f));
   inLightVec.y =
-      dot(bary, float4(tri[0].interps[4].y, tri[1].interps[4].y, tri[2].interps[4].y, 0.0f));
+      dot(bary, make_float4(tri[0].interps[4].y, tri[1].interps[4].y, tri[2].interps[4].y, 0.0f));
   inLightVec.z =
-      dot(bary, float4(tri[0].interps[4].z, tri[1].interps[4].z, tri[2].interps[4].z, 0.0f));
+      dot(bary, make_float4(tri[0].interps[4].z, tri[1].interps[4].z, tri[2].interps[4].z, 0.0f));
   inLightVec.w = 0.0f;
 
   // vec3 Eye = normalize(-inEyePos);
-  float4 Eye = float4(-inEyePos.x, -inEyePos.y, -inEyePos.z, 0.0f);
+  float4 Eye = make_float4(-inEyePos.x, -inEyePos.y, -inEyePos.z, 0.0f);
   normalize3(Eye);
 
   // vec3 Reflected = normalize(reflect(-inLightVec, inNormal));
@@ -477,7 +478,7 @@ void sascha_vulkanscene_mesh_fs(const GPUState &state, float pixdepth, const flo
   // vec3 Reflected = normalize((-inLightVec) - 2.0 * dot(inNormal, -inLightVec) * inNormal);
   float4 Reflected;
   float mulResult =
-      2.0f * dot(inNormal, float4(-inLightVec.x, -inLightVec.y, -inLightVec.z, -inLightVec.w));
+      2.0f * dot(inNormal, make_float4(-inLightVec.x, -inLightVec.y, -inLightVec.z, -inLightVec.w));
   Reflected.x = -inLightVec.x - mulResult * inNormal.x;
   Reflected.y = -inLightVec.y - mulResult * inNormal.y;
   Reflected.z = -inLightVec.z - mulResult * inNormal.z;
@@ -486,7 +487,7 @@ void sascha_vulkanscene_mesh_fs(const GPUState &state, float pixdepth, const flo
 
   // vec3 halfVec = normalize(inLightVec + inEyePos);
   float4 halfVec =
-      float4(inLightVec.x + inEyePos.x, inLightVec.y + inEyePos.y, inLightVec.z + inEyePos.z, 0.0f);
+      make_float4(inLightVec.x + inEyePos.x, inLightVec.y + inEyePos.y, inLightVec.z + inEyePos.z, 0.0f);
   normalize3(halfVec);
 
   // float diff = clamp(dot(inLightVec, inNormal), 0.0, 1.0);
@@ -543,34 +544,34 @@ void sascha_vulkanscene_logo_fs(const GPUState &state, float pixdepth, const flo
                                 const VertexCacheEntry tri[3], float4 &out)
 {
   float4 inNormal;
-  inNormal.x = dot(bary, float4(tri[0].interps[1].x, tri[1].interps[1].x, tri[2].interps[1].x, 0.0f));
-  inNormal.y = dot(bary, float4(tri[0].interps[1].y, tri[1].interps[1].y, tri[2].interps[1].y, 0.0f));
-  inNormal.z = dot(bary, float4(tri[0].interps[1].z, tri[1].interps[1].z, tri[2].interps[1].z, 0.0f));
+  inNormal.x = dot(bary, make_float4(tri[0].interps[1].x, tri[1].interps[1].x, tri[2].interps[1].x, 0.0f));
+  inNormal.y = dot(bary, make_float4(tri[0].interps[1].y, tri[1].interps[1].y, tri[2].interps[1].y, 0.0f));
+  inNormal.z = dot(bary, make_float4(tri[0].interps[1].z, tri[1].interps[1].z, tri[2].interps[1].z, 0.0f));
   inNormal.w = 0.0f;
 
   float4 inColor;
-  inColor.x = dot(bary, float4(tri[0].interps[2].x, tri[1].interps[2].x, tri[2].interps[2].x, 0.0f));
-  inColor.y = dot(bary, float4(tri[0].interps[2].y, tri[1].interps[2].y, tri[2].interps[2].y, 0.0f));
-  inColor.z = dot(bary, float4(tri[0].interps[2].z, tri[1].interps[2].z, tri[2].interps[2].z, 0.0f));
+  inColor.x = dot(bary, make_float4(tri[0].interps[2].x, tri[1].interps[2].x, tri[2].interps[2].x, 0.0f));
+  inColor.y = dot(bary, make_float4(tri[0].interps[2].y, tri[1].interps[2].y, tri[2].interps[2].y, 0.0f));
+  inColor.z = dot(bary, make_float4(tri[0].interps[2].z, tri[1].interps[2].z, tri[2].interps[2].z, 0.0f));
   inColor.w = 0.0f;
 
   float4 inEyePos;
-  inEyePos.x = dot(bary, float4(tri[0].interps[3].x, tri[1].interps[3].x, tri[2].interps[3].x, 0.0f));
-  inEyePos.y = dot(bary, float4(tri[0].interps[3].y, tri[1].interps[3].y, tri[2].interps[3].y, 0.0f));
-  inEyePos.z = dot(bary, float4(tri[0].interps[3].z, tri[1].interps[3].z, tri[2].interps[3].z, 0.0f));
+  inEyePos.x = dot(bary, make_float4(tri[0].interps[3].x, tri[1].interps[3].x, tri[2].interps[3].x, 0.0f));
+  inEyePos.y = dot(bary, make_float4(tri[0].interps[3].y, tri[1].interps[3].y, tri[2].interps[3].y, 0.0f));
+  inEyePos.z = dot(bary, make_float4(tri[0].interps[3].z, tri[1].interps[3].z, tri[2].interps[3].z, 0.0f));
   inEyePos.w = 0.0f;
 
   float4 inLightVec;
   inLightVec.x =
-      dot(bary, float4(tri[0].interps[4].x, tri[1].interps[4].x, tri[2].interps[4].x, 0.0f));
+      dot(bary, make_float4(tri[0].interps[4].x, tri[1].interps[4].x, tri[2].interps[4].x, 0.0f));
   inLightVec.y =
-      dot(bary, float4(tri[0].interps[4].y, tri[1].interps[4].y, tri[2].interps[4].y, 0.0f));
+      dot(bary, make_float4(tri[0].interps[4].y, tri[1].interps[4].y, tri[2].interps[4].y, 0.0f));
   inLightVec.z =
-      dot(bary, float4(tri[0].interps[4].z, tri[1].interps[4].z, tri[2].interps[4].z, 0.0f));
+      dot(bary, make_float4(tri[0].interps[4].z, tri[1].interps[4].z, tri[2].interps[4].z, 0.0f));
   inLightVec.w = 0.0f;
 
   // vec3 Eye = normalize(-inEyePos);
-  float4 Eye = float4(-inEyePos.x, -inEyePos.y, -inEyePos.z, 0.0f);
+  float4 Eye = make_float4(-inEyePos.x, -inEyePos.y, -inEyePos.z, 0.0f);
   normalize3(Eye);
 
   // vec3 Reflected = normalize(reflect(-inLightVec, inNormal));
@@ -578,7 +579,7 @@ void sascha_vulkanscene_logo_fs(const GPUState &state, float pixdepth, const flo
   // vec3 Reflected = normalize((-inLightVec) - 2.0 * dot(inNormal, -inLightVec) * inNormal);
   float4 Reflected;
   float mulResult =
-      2.0f * dot(inNormal, float4(-inLightVec.x, -inLightVec.y, -inLightVec.z, -inLightVec.w));
+      2.0f * dot(inNormal, make_float4(-inLightVec.x, -inLightVec.y, -inLightVec.z, -inLightVec.w));
   Reflected.x = -inLightVec.x - mulResult * inNormal.x;
   Reflected.y = -inLightVec.y - mulResult * inNormal.y;
   Reflected.z = -inLightVec.z - mulResult * inNormal.z;
@@ -598,7 +599,7 @@ void sascha_vulkanscene_logo_fs(const GPUState &state, float pixdepth, const flo
 
   // vec4 spec = vec4(1.0, 1.0, 1.0, 1.0) * pow(max(dot(Reflected, Eye), 0.0), 2.5) * shininess;
   // shininess == 0.0 so cancels out
-  float4 spec(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 spec = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
 
   // outFragColor = diff + spec;
   out.x = diff.x;
@@ -622,7 +623,7 @@ void sascha_vulkanscene_skybox_vs(const GPUState &state, uint32_t vertexIndex, V
   const float *projection = (const float *)(ubo->bytes + offs);
   const float *model = projection + 16;
 
-  float *outUVW = out.interps[0].v;
+  float *outUVW = &out.interps[0].x;
 
   // outUVW = inPos;
   outUVW[0] = inPos[0];
@@ -630,18 +631,18 @@ void sascha_vulkanscene_skybox_vs(const GPUState &state, uint32_t vertexIndex, V
   outUVW[2] = inPos[2];
 
   // gl_Position = ubo.projection * ubo.model * vec4(inPos.xyz, 1.0);
-  float4 modelMul = float4(0.0f, 0.0f, 0.0f, 0.0f);
+  float4 modelMul = make_float4(0.0f, 0.0f, 0.0f, 0.0f);
   for(int col = 0; col < 4; col++)
   {
     for(int row = 0; row < 4; row++)
-      modelMul.v[row] += model[col * 4 + row] * (col < 3 ? inPos[col] : 1.0f);
+      (&modelMul.x)[row] += model[col * 4 + row] * (col < 3 ? inPos[col] : 1.0f);
   }
 
   out.position.x = out.position.y = out.position.z = out.position.w = 0.0f;
   for(int col = 0; col < 4; col++)
   {
     for(int row = 0; row < 4; row++)
-      out.position.v[row] += projection[col * 4 + row] * modelMul.v[col];
+      (&out.position.x)[row] += projection[col * 4 + row] * (&modelMul.x)[col];
   }
 }
 
@@ -650,9 +651,9 @@ void sascha_vulkanscene_skybox_fs(const GPUState &state, float pixdepth, const f
 {
   VkImage tex = state.set->binds[1].data.imageInfo.imageView->image;
 
-  float u = dot(bary, float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
-  float v = dot(bary, float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
-  float w = dot(bary, float4(tri[0].interps[0].z, tri[1].interps[0].z, tri[2].interps[0].z, 0.0f));
+  float u = dot(bary, make_float4(tri[0].interps[0].x, tri[1].interps[0].x, tri[2].interps[0].x, 0.0f));
+  float v = dot(bary, make_float4(tri[0].interps[0].y, tri[1].interps[0].y, tri[2].interps[0].y, 0.0f));
+  float w = dot(bary, make_float4(tri[0].interps[0].z, tri[1].interps[0].z, tri[2].interps[0].z, 0.0f));
 
   out = sample_cube_wrapped(u, v, w, tex);
 }

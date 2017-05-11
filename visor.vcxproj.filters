@@ -1,7 +1,6 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <ClCompile Include="rasterizer.cpp" />
     <ClCompile Include="icd_interface.cpp" />
     <ClCompile Include="icd_stubs.cpp" />
     <ClCompile Include="images.cpp" />
@@ -20,7 +19,6 @@
     <ClCompile Include="stats.cpp" />
     <ClCompile Include="descriptors.cpp" />
     <ClCompile Include="shaders.cpp" />
-    <ClCompile Include="premade_shaders.cpp" />
     <ClCompile Include="texture_sampling.cpp" />
     <ClCompile Include="3rdparty\decompress.c">
       <Filter>3rdparty\decompress</Filter>
@@ -67,5 +65,6 @@
   </ItemGroup>
   <ItemGroup>
     <CudaCompile Include="rasterizer.cu" />
+    <CudaCompile Include="premade_shaders.cu" />
   </ItemGroup>
 </Project>
